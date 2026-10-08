@@ -1,0 +1,181 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light dark;
+  }
+
+  html,
+  body {
+    @apply h-full;
+  }
+
+  body {
+    @apply bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
+  }
+
+  * {
+    @apply border-slate-200 dark:border-slate-800;
+  }
+
+  ::selection {
+    @apply bg-indigo-500/25;
+  }
+
+  /* Subtle scrollbars for the wide data tables */
+  ::-webkit-scrollbar {
+    height: 10px;
+    width: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-slate-300 dark:bg-slate-700;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-400 dark:bg-slate-600;
+  }
+}
+
+@layer components {
+  /* ---------- surfaces ---------- */
+  .card {
+    @apply rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900;
+  }
+
+  .card-pad {
+    @apply p-4 sm:p-5;
+  }
+
+  .page-title {
+    @apply text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl dark:text-white;
+  }
+
+  .page-subtitle {
+    @apply mt-1 text-sm text-slate-500 dark:text-slate-400;
+  }
+
+  .section-title {
+    @apply text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400;
+  }
+
+  .muted {
+    @apply text-slate-500 dark:text-slate-400;
+  }
+
+  /* ---------- form controls ---------- */
+  .label {
+    @apply mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300;
+  }
+
+  .input,
+  .select,
+  .textarea {
+    @apply block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm
+      placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30
+      disabled:cursor-not-allowed disabled:opacity-60
+      dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500;
+  }
+
+  .select {
+    @apply pr-8;
+  }
+
+  .input-sm,
+  .select-sm {
+    @apply rounded-md px-2 py-1 text-xs;
+  }
+
+  .textarea {
+    @apply min-h-[2.25rem] resize-y;
+  }
+
+  /* ---------- buttons ---------- */
+  .btn {
+    @apply inline-flex select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2
+      text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50
+      disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-sm {
+    @apply px-2.5 py-1.5 text-xs;
+  }
+
+  .btn-primary {
+    @apply bg-indigo-600 text-white hover:bg-indigo-500 active:bg-indigo-700;
+  }
+
+  .btn-secondary {
+    @apply border border-slate-300 bg-white text-slate-700 hover:bg-slate-100
+      dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800;
+  }
+
+  .btn-ghost {
+    @apply text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800;
+  }
+
+  .btn-danger {
+    @apply bg-rose-600 text-white hover:bg-rose-500 active:bg-rose-700;
+  }
+
+  .link {
+    @apply text-indigo-600 underline-offset-2 hover:underline dark:text-indigo-400;
+  }
+
+  /* ---------- tables ---------- */
+  .table-wrap {
+    @apply w-full overflow-x-auto;
+  }
+
+  .data-table {
+    @apply w-full min-w-full border-collapse text-left text-sm;
+  }
+
+  .data-table thead th {
+    @apply sticky top-0 z-10 whitespace-nowrap border-b border-slate-200 bg-slate-100/90 px-3 py-2.5
+      text-xs font-semibold uppercase tracking-wide text-slate-600 backdrop-blur
+      dark:border-slate-800 dark:bg-slate-800/90 dark:text-slate-300;
+  }
+
+  .data-table tbody td {
+    @apply border-b border-slate-100 px-3 py-2.5 align-top text-slate-700 dark:border-slate-800/70 dark:text-slate-200;
+  }
+
+  .data-table tbody tr:hover {
+    @apply bg-slate-50 dark:bg-slate-800/40;
+  }
+
+  .nowrap {
+    @apply whitespace-nowrap;
+  }
+
+  /* ---------- badges ---------- */
+  .badge {
+    @apply inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium;
+  }
+
+  .badge-green {
+    @apply bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300;
+  }
+  .badge-yellow {
+    @apply bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300;
+  }
+  .badge-red {
+    @apply bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-300;
+  }
+  .badge-grey {
+    @apply bg-slate-200 text-slate-700 dark:bg-slate-700/50 dark:text-slate-300;
+  }
+  .badge-blue {
+    @apply bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300;
+  }
+  .badge-indigo {
+    @apply bg-indigo-100 text-indigo-800 dark:bg-indigo-500/15 dark:text-indigo-300;
+  }
+  .badge-purple {
+    @apply bg-violet-100 text-violet-800 dark:bg-violet-500/15 dark:text-violet-300;
+  }
+}
