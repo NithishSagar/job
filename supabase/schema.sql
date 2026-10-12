@@ -57,6 +57,9 @@ CREATE TABLE jobs (
   date_scraped TIMESTAMP DEFAULT NOW(),
   source TEXT NOT NULL, -- 'Indeed', 'Wellfound', 'LinkedIn', etc.
   tags TEXT[], -- Array of tech keywords
+  content_hash TEXT, -- sha256(company + normalised title + description[:200]),
+                     -- for catching the same job syndicated to two boards under
+                     -- two different URLs. See supabase/migrations/0002.
   is_tier1_company BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW(),
@@ -67,6 +70,7 @@ CREATE INDEX idx_jobs_user_id ON jobs(user_id);
 CREATE INDEX idx_jobs_date_posted ON jobs(date_posted DESC);
 CREATE INDEX idx_jobs_source ON jobs(source);
 CREATE INDEX idx_jobs_visa ON jobs(visa_sponsorship);
+CREATE INDEX idx_jobs_content_hash ON jobs(content_hash);
 
 -- ============================================
 -- TABLE 3: APPLICATIONS (Your tracked applications)

@@ -14,8 +14,14 @@ known-skipped rather than silently missing.
 
 Every source writes into `jobs` (upsert on user_id+job_url) and reports into
 `job_board_status` / `job_board_stats`. Schema: supabase/schema.sql.
+
+Deduplication runs in two layers. The database `UNIQUE(user_id, job_url)` only
+catches re-scraping the same URL; the same vacancy syndicated to two boards
+arrives under two URLs. So every row also carries a `content_hash` and the
+batch is checked against recent rows before upload - see `is_duplicate`.
 """
 
+import difflib
 import hashlib
 import json
 import logging
@@ -43,6 +49,14 @@ USER_AGENT: Final[str] = (
 
 REQUEST_TIMEOUT: Final[int] = 30
 POLITE_DELAY_SECONDS: Final[float] = 1.5
+
+# Cross-board dedup. A content match inside the window is the same live posting
+# on another board; an older one is a re-advertised vacancy and may be upserted
+# again so `date_scraped` moves forward.
+DUPLICATE_WINDOW_DAYS: Final[int] = 7
+TITLE_SIMILARITY_THRESHOLD: Final[float] = 0.85
+# Postgres `in.(...)` filters go in the URL, so they are chunked.
+HASH_LOOKUP_CHUNK: Final[int] = 150
 
 SEARCH_TERMS: Final[tuple[str, ...]] = (
     "AI Engineer",
@@ -297,6 +311,32 @@ def _stable_id(*parts: str) -> str:
     return hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:12]
 
 
+_PUNCT_RE: Final[re.Pattern[str]] = re.compile(r"[^\w\s]+")
+
+
+def normalize_title(value: str | None) -> str:
+    """'Senior ML Engineer (Remote!)' -> 'senior ml engineer remote'.
+
+    Boards reformat the same title constantly - punctuation, casing and padding
+    all differ - so both the content hash and the fuzzy compare work off this.
+    """
+    if not value:
+        return ""
+    return re.sub(r"\s+", " ", _PUNCT_RE.sub(" ", value.lower())).strip()
+
+
+def content_hash(
+    company_name: str | None, job_title: str | None, description: str | None
+) -> str:
+    """Identity of a posting independent of which board it came from."""
+    payload = (
+        (company_name or "").lower().strip()
+        + normalize_title(job_title)
+        + (description or "")[:200]
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 class JobBoardScraper:
     """Runs every registered source and persists the results to Supabase."""
 
@@ -337,6 +377,8 @@ class JobBoardScraper:
             ("Total Jobs", self.scrape_total_jobs),
             ("Glassdoor UK", self.scrape_glassdoor_uk),
             ("Built In", self.scrape_built_in),
+            ("Silicon Roundabout", self.scrape_silicon_roundabout),
+            ("Remote Rocketship", self.scrape_remote_rocketship),
         ]
 
     # ------------------------------------------------------------------ utils
@@ -439,6 +481,128 @@ class JobBoardScraper:
             unique.append(job)
         return unique
 
+    # --------------------------------------------- cross-board content dedup
+
+    def _recent_jobs_cache(self, jobs: list[dict[str, Any]]) -> dict[str, Any]:
+        """Rows already stored that could collide with this batch.
+
+        Two bounded queries: the content hashes in the batch, and recent rows
+        for the companies in the batch (the fuzzy compare never leaves a
+        company, so the whole table is never pulled).
+        """
+        cache: dict[str, Any] = {"by_hash": {}, "by_company": {}}
+        hashes = sorted({h for job in jobs if (h := job.get("content_hash"))})
+        companies = sorted(
+            {c for job in jobs if (c := (job.get("company_name") or "").lower().strip())}
+        )
+        cutoff = datetime.now(UTC) - timedelta(days=DUPLICATE_WINDOW_DAYS)
+
+        try:
+            for start in range(0, len(hashes), HASH_LOOKUP_CHUNK):
+                result = (
+                    self.supabase.table("jobs")
+                    .select("content_hash, date_scraped")
+                    .eq("user_id", self.user_id)
+                    .in_("content_hash", hashes[start : start + HASH_LOOKUP_CHUNK])
+                    .execute()
+                )
+                for row in result.data or []:
+                    key = row.get("content_hash")
+                    stamp = self._parse_iso(row.get("date_scraped"))
+                    if not key:
+                        continue
+                    previous = cache["by_hash"].get(key)
+                    if previous is None or (stamp and stamp > previous):
+                        cache["by_hash"][key] = stamp
+
+            for start in range(0, len(companies), HASH_LOOKUP_CHUNK):
+                result = (
+                    self.supabase.table("jobs")
+                    .select("company_name, job_title, date_scraped")
+                    .eq("user_id", self.user_id)
+                    .gte("date_scraped", cutoff.isoformat())
+                    .in_("company_name", companies[start : start + HASH_LOOKUP_CHUNK])
+                    .execute()
+                )
+                for row in result.data or []:
+                    company = (row.get("company_name") or "").lower().strip()
+                    title = normalize_title(row.get("job_title"))
+                    if not company or not title:
+                        continue
+                    cache["by_company"].setdefault(company, []).append(
+                        (title, self._parse_iso(row.get("date_scraped")))
+                    )
+        except Exception as exc:
+            # Fail open: a lookup problem must not cost the whole run. The
+            # UNIQUE(user_id, job_url) constraint is still in force underneath.
+            log.warning("Content-hash dedup lookup failed, upserting unfiltered: %s", exc)
+            return {"by_hash": {}, "by_company": {}}
+
+        return cache
+
+    def is_duplicate(self, job: dict[str, Any], recent_jobs_cache: dict[str, Any]) -> bool:
+        """True when this posting is already stored under a different URL.
+
+        Exact content hash first, then a same-company title compare for the
+        near-misses the hash cannot catch (a board that pads whitespace or
+        truncates the description changes the hash but not the job).
+        """
+        cutoff = datetime.now(UTC) - timedelta(days=DUPLICATE_WINDOW_DAYS)
+
+        stamp = recent_jobs_cache.get("by_hash", {}).get(job.get("content_hash"))
+        if stamp is not None and stamp >= cutoff:
+            return True
+
+        company = (job.get("company_name") or "").lower().strip()
+        title = normalize_title(job.get("job_title"))
+        if not company or not title:
+            return False
+        for other_title, other_stamp in recent_jobs_cache.get("by_company", {}).get(
+            company, ()
+        ):
+            if other_stamp is None or other_stamp < cutoff:
+                continue
+            ratio = difflib.SequenceMatcher(None, title, other_title).ratio()
+            if ratio >= TITLE_SIMILARITY_THRESHOLD:
+                return True
+        return False
+
+    def remove_content_duplicates(
+        self, jobs: list[dict[str, Any]]
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Second dedup layer: drop postings already held under another URL.
+
+        Returns (keep, dropped). Accepted rows are folded back into the cache
+        so two boards carrying the same vacancy in one run also collapse.
+        """
+        if not jobs:
+            return [], 0
+
+        cache = self._recent_jobs_cache(jobs)
+        now = datetime.now(UTC)
+        keep: list[dict[str, Any]] = []
+        dropped = 0
+
+        for job in jobs:
+            if self.is_duplicate(job, cache):
+                dropped += 1
+                log.debug(
+                    "DUP   %-32s %s @ %s",
+                    job.get("source"),
+                    job.get("job_title"),
+                    job.get("company_name"),
+                )
+                continue
+            keep.append(job)
+            if job_hash := job.get("content_hash"):
+                cache["by_hash"][job_hash] = now
+            company = (job.get("company_name") or "").lower().strip()
+            title = normalize_title(job.get("job_title"))
+            if company and title:
+                cache["by_company"].setdefault(company, []).append((title, now))
+
+        return keep, dropped
+
     def build_job(
         self,
         *,
@@ -488,6 +652,7 @@ class JobBoardScraper:
             "date_scraped": datetime.now(UTC).isoformat(),
             "source": source,
             "tags": tags if tags is not None else self.extract_tags(haystack),
+            "content_hash": content_hash(company_name, job_title, description),
         }
 
     # ------------------------------------------------- Group A: official APIs
@@ -944,9 +1109,17 @@ class JobBoardScraper:
     # ------------------------------------------------------- Group C: stubs
 
     def scrape_cw_jobs(self) -> list[dict[str, Any]]:
+        # Re-checked 2026-10-12: the earlier "bot detection" reason was wrong.
+        # /jobs/machine-learning/in-london returns 1MB of static HTML with every
+        # listing in it, to this exact User-Agent, with no challenge. The terms
+        # are the only blocker - which is why the reason now quotes them.
         raise NotImplementedError(
-            "CWJobs (StepStone) prohibits automated data extraction in its terms and "
-            "fronts listings with bot detection - use their employer/partner feeds."
+            "CWJobs (StepStone) serves its listings in static HTML and does not block "
+            "this scraper, but terms clause 1.1 grants only 'use, print and download' "
+            "to 'individuals looking for employment opportunities' and adds 'You may "
+            "not otherwise copy, display, transmit or distribute any material from the "
+            "site' - storing listings falls outside that grant. robots.txt also "
+            "disallows /jobs*?page=*. Use their employer/partner feeds."
         )
 
     def scrape_free_work(self) -> list[dict[str, Any]]:
@@ -956,15 +1129,31 @@ class JobBoardScraper:
         )
 
     def scrape_hiring_cafe(self) -> list[dict[str, Any]]:
+        # Re-checked 2026-10-12. The closest call of the six: robots.txt is
+        # actively welcoming (Allow: /jobs, plus jobs-sitemap.xml), and there is
+        # no anti-bot clause. The IP clause still says no to copying, so the
+        # project's own rule applies - if either signal says no, stay stubbed.
         raise NotImplementedError(
-            "hiring.cafe is a JS app over a private internal API with no public "
-            "terms permitting automated access - use the site directly."
+            "hiringcafe.com robots.txt does allow /jobs, but its terms (section 5) "
+            "say 'You must not: Republish material from HiringCafe / ... / Reproduce, "
+            "duplicate, or copy material from HiringCafe / Redistribute content from "
+            "HiringCafe' - which is what storing their listings would be. The listing "
+            "page is also a JS shell (raw HTML is 'Loading...' placeholders), so it "
+            "would be a Firecrawl target; Firecrawl is a renderer, not a licence."
         )
 
     def scrape_welcome_to_the_jungle(self) -> list[dict[str, Any]]:
+        # Re-checked 2026-10-12: robots.txt is in fact fully permissive
+        # (User-agent: * / Disallow:), so the old "Cloudflare" reason was not
+        # the real one. The terms are, and they are explicit.
         raise NotImplementedError(
-            "Welcome to the Jungle sits behind Cloudflare bot management and its "
-            "terms forbid automated extraction - use their official API programme."
+            "Welcome to the Jungle's terms of use forbid 'any software, device, "
+            "script, robot, or any other means or process (including but not limited "
+            "to spiders, browser plug-ins and add-ons, or any other technology) to web "
+            "scrape or otherwise copy or download our Website, Content or Services', "
+            "excepting only public search engines. robots.txt is permissive but the "
+            "terms are not, and Firecrawl would not make this compliant - it would "
+            "only make it technically easier. Use their official API programme."
         )
 
     def scrape_wellfound(self) -> list[dict[str, Any]]:
@@ -981,8 +1170,10 @@ class JobBoardScraper:
 
     def scrape_work_in_startups(self) -> list[dict[str, Any]]:
         raise NotImplementedError(
-            "workinstartups.com reserves reuse of its listings and was excluded from "
-            "automated collection by choice - check it manually."
+            "workinstartups.com sits behind a CloudFront WAF that answers every "
+            "request from this host with '403 ERROR / Request blocked', including "
+            "/robots.txt itself - so neither its crawl rules nor its terms can even "
+            "be read. Access is refused at the edge; that refusal is the answer."
         )
 
     def scrape_linkedin(self) -> list[dict[str, Any]]:
@@ -1014,6 +1205,27 @@ class JobBoardScraper:
         raise NotImplementedError(
             "Built In (US) prohibits automated collection of listings in its terms - "
             "browse builtin.com manually."
+        )
+
+    def scrape_silicon_roundabout(self) -> list[dict[str, Any]]:
+        # The only one of the six that is not a permissions problem: nothing to
+        # scrape. robots.txt is empty-Disallow and the site is plain WordPress.
+        raise NotImplementedError(
+            "siliconroundabout.tech has no job board: /jobs, /careers, /job-board and "
+            "/talent all 404, the WordPress REST API exposes no job post type (only "
+            "post/page/attachment), and page-sitemap.xml lists only community, events "
+            "and investor pages. robots.txt permits everything - there is simply "
+            "nothing here to parse. Their roles move through community channels."
+        )
+
+    def scrape_remote_rocketship(self) -> list[dict[str, Any]]:
+        raise NotImplementedError(
+            "remoterocketship.com terms section 5 (Fair Use & Automation): 'Scraping "
+            "the Platform, running automated browser sessions, or performing request "
+            "bursts that mimic scraping is prohibited.' That names Firecrawl-style "
+            "rendering explicitly, so Firecrawl is not a way round it. They sell the "
+            "sanctioned route instead: POST /api/openclaw/jobs with a Bearer key from "
+            "a paid subscription (3000 jobs or 500 requests/day, 50 jobs/request)."
         )
 
     # ------------------------------------------------------------- date utils
@@ -1229,13 +1441,15 @@ class JobBoardScraper:
             self.log_board_status(board_name, True, len(deduped), None)
 
         unique = self.remove_duplicates(all_jobs)
-        upserted = self._upsert_jobs(unique) if unique else 0
+        fresh, content_dupes = self.remove_content_duplicates(unique)
+        upserted = self._upsert_jobs(fresh) if fresh else 0
         self.update_board_stats()
 
         finished = datetime.now(UTC)
         return {
             "jobs_found": len(all_jobs),
             "jobs_unique": len(unique),
+            "jobs_cross_board_duplicates": content_dupes,
             "jobs_upserted": upserted,
             "sources_working": working,
             "sources_skipped": skipped,
@@ -1297,8 +1511,10 @@ def main() -> int:
     summary = scraper.run_all_scrapers()
 
     log.info(
-        "Scraping complete. %d jobs added, %d sources working, %d skipped, %d failed.",
+        "Scraping complete. %d jobs added, %d cross-board duplicates dropped, "
+        "%d sources working, %d skipped, %d failed.",
         summary["jobs_upserted"],
+        summary["jobs_cross_board_duplicates"],
         summary["sources_working"],
         summary["sources_skipped"],
         summary["sources_failed"],

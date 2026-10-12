@@ -64,8 +64,19 @@ HTML (see `scraper/README.md` for why). Both are free:
 
 - **Adzuna**: sign up at https://developer.adzuna.com/ → get an `App ID` and `App Key`.
 - **Reed**: sign up at https://www.reed.co.uk/developers/jobseeker → get an API key.
+- **Firecrawl** (optional): sign up free at https://www.firecrawl.dev → get an API key. Only
+  needed for the handful of sources that are genuinely JS-rendered with no ToS/robots.txt
+  objection to automated access — see `scraper/README.md` for exactly which ones and why.
+  The free tier is 500 requests/month; the scraper is written to use at most 1 request per
+  Firecrawl-based board per run, so a daily run stays well inside that budget. Leaving this
+  key unset just means those specific sources report `Down` instead of failing the whole run.
 
 Add these to your `.env` alongside the Supabase values (see `scraper/.env.example`).
+
+If you already ran `schema.sql` in Supabase before 2026-10-12, also run
+`supabase/migrations/0002_content_hash.sql` once (SQL Editor → New Query → paste → Run) to
+pick up the cross-board duplicate-detection column added that day. A fresh install doesn't
+need this — it's already in `schema.sql`.
 
 ## Step 6: Run the scraper locally once
 

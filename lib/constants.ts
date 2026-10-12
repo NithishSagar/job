@@ -68,6 +68,8 @@ export const JOB_BOARDS = [
   'Total Jobs',
   'Glassdoor UK',
   'Built In',
+  'Silicon Roundabout',
+  'Remote Rocketship',
 ] as const;
 
 export type JobBoardName = (typeof JOB_BOARDS)[number];
