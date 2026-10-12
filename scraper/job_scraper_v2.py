@@ -495,7 +495,7 @@ class JobBoardScraper:
         companies = sorted(
             {c for job in jobs if (c := (job.get("company_name") or "").lower().strip())}
         )
-        cutoff = datetime.now(UTC) - timedelta(days=DUPLICATE_WINDOW_DAYS)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=DUPLICATE_WINDOW_DAYS)
 
         try:
             for start in range(0, len(hashes), HASH_LOOKUP_CHUNK):
@@ -547,7 +547,7 @@ class JobBoardScraper:
         near-misses the hash cannot catch (a board that pads whitespace or
         truncates the description changes the hash but not the job).
         """
-        cutoff = datetime.now(UTC) - timedelta(days=DUPLICATE_WINDOW_DAYS)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=DUPLICATE_WINDOW_DAYS)
 
         stamp = recent_jobs_cache.get("by_hash", {}).get(job.get("content_hash"))
         if stamp is not None and stamp >= cutoff:
@@ -579,7 +579,7 @@ class JobBoardScraper:
             return [], 0
 
         cache = self._recent_jobs_cache(jobs)
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
         keep: list[dict[str, Any]] = []
         dropped = 0
 
@@ -649,7 +649,7 @@ class JobBoardScraper:
             ),
             "remote_status": remote_status or self.detect_remote_status(haystack),
             "date_posted": _iso(date_posted),
-            "date_scraped": datetime.now(UTC).isoformat(),
+            "date_scraped": datetime.now(timezone.utc).isoformat(),
             "source": source,
             "tags": tags if tags is not None else self.extract_tags(haystack),
             "content_hash": content_hash(company_name, job_title, description),
@@ -763,7 +763,7 @@ class JobBoardScraper:
                     ),
                     salary_currency=item.get("currency") or "GBP",
                     date_posted=(
-                        datetime.strptime(posted, "%d/%m/%Y").replace(tzinfo=UTC)
+                        datetime.strptime(posted, "%d/%m/%Y").replace(tzinfo=timezone.utc)
                         if posted
                         else None
                     ),
@@ -1247,7 +1247,7 @@ class JobBoardScraper:
             parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
         except ValueError:
             return None
-        return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
     @staticmethod
     def _parse_relative_age(text: str | None) -> datetime | None:
@@ -1270,7 +1270,7 @@ class JobBoardScraper:
             days = count * 365
         else:
             return None
-        return datetime.now(UTC) - timedelta(days=days)
+        return datetime.now(timezone.utc) - timedelta(days=days)
 
     @staticmethod
     def _first_uk_place(text: str | None) -> str | None:
@@ -1328,11 +1328,11 @@ class JobBoardScraper:
                 "board_name": board_name,
                 "status": status,
                 "jobs_scraped_today": count,
-                "last_scraped": datetime.now(UTC).isoformat(),
+                "last_scraped": datetime.now(timezone.utc).isoformat(),
                 "error_message": error,
                 "error_count": error_count,
                 "success_count": success_count,
-                "updated_at": datetime.now(UTC).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
             },
             on_conflict="user_id,board_name",
         ).execute()
@@ -1366,7 +1366,7 @@ class JobBoardScraper:
             if len(batch) < page_size:
                 break
 
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
         today, week_ago, month_ago = (
             now - timedelta(days=1),
             now - timedelta(days=7),
@@ -1410,7 +1410,7 @@ class JobBoardScraper:
     # -------------------------------------------------------------- the runner
 
     def run_all_scrapers(self) -> dict[str, Any]:
-        started = datetime.now(UTC)
+        started = datetime.now(timezone.utc)
         all_jobs: list[dict[str, Any]] = []
         per_board: dict[str, dict[str, Any]] = {}
         working = skipped = failed = 0
@@ -1445,7 +1445,7 @@ class JobBoardScraper:
         upserted = self._upsert_jobs(fresh) if fresh else 0
         self.update_board_stats()
 
-        finished = datetime.now(UTC)
+        finished = datetime.now(timezone.utc)
         return {
             "jobs_found": len(all_jobs),
             "jobs_unique": len(unique),
@@ -1494,7 +1494,7 @@ def main() -> int:
     from supabase import create_client
 
     load_dotenv()
-    log_path = Path(__file__).parent / "logs" / f"scraper_{datetime.now(UTC):%Y-%m-%d}.log"
+    log_path = Path(__file__).parent / "logs" / f"scraper_{datetime.now(timezone.utc):%Y-%m-%d}.log"
     _configure_logging(log_path)
 
     url = os.getenv("SUPABASE_URL")
