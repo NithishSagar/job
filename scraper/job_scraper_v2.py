@@ -29,7 +29,7 @@ import os
 import re
 import sys
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import  datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Callable, Final
