@@ -1,0 +1,52 @@
+name: Daily Job Scraper
+
+on:
+  schedule:
+    - cron: '0 7 * * *'  # 7 AM UTC daily
+  workflow_dispatch:  # Manual trigger from GitHub UI
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install requests beautifulsoup4 lxml python-dotenv supabase
+
+      - name: Run scraper
+        env:
+          # Supabase credentials
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          
+          # Adzuna API credentials
+          ADZUNA_APP_ID: ${{ secrets.ADZUNA_API_ID }}
+          ADZUNA_APP_KEY: ${{ secrets.ADZUNA_API_KEY }}
+          
+          # Reed API credentials (if you have them)
+          REED_API_KEY: ${{ secrets.REED_API_KEY }}
+          
+          # Firecrawl API key (currently unused, but available)
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+          
+          # Optional: specify which user to scrape for
+          SCRAPER_USER_ID: ${{ secrets.SCRAPER_USER_ID }}
+        
+        run: |
+          cd scraper
+          python job_scraper_v2.py
+      
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "Scraper failed. Check GitHub Actions logs for details."
+          exit 1
