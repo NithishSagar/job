@@ -178,4 +178,7 @@
   .badge-purple {
     @apply bg-violet-100 text-violet-800 dark:bg-violet-500/15 dark:text-violet-300;
   }
+  .badge-orange {
+    @apply bg-orange-100 text-orange-800 dark:bg-orange-500/15 dark:text-orange-300;
+  }
 }

@@ -8,6 +8,7 @@
 import type {
   ApplicationStatus,
   BoardStatusValue,
+  Recommendation,
   UserRole,
 } from '@/lib/constants';
 
@@ -116,3 +117,26 @@ export interface Invite {
 
 /** A minimal job shape used by the "add application" job picker. */
 export type JobOption = Pick<Job, 'id' | 'company_name' | 'job_title' | 'source'>;
+
+/**
+ * A row from the `top_100_jobs` Supabase VIEW (joins `jobs` + `evaluations`).
+ * Both the view and the `evaluations` table it reads from are maintained by a
+ * separate, manual AI-scoring process outside this app — see
+ * docs/API_DOCS.md. Scored fields are therefore all optional/nullable here:
+ * this app only displays them, it never assumes they're populated, and it
+ * never writes to `evaluations`.
+ */
+export interface RankedJob {
+  id: number;
+  job_title: string;
+  company_name: string;
+  location: string | null;
+  job_url: string;
+  source?: string | null;
+  date_posted?: string | null;
+  match_score: number | null;
+  recommendation: Recommendation | string | null;
+  fit_summary: string | null;
+  ranked_position: number | null;
+  key_strengths_match: string[] | null;
+}

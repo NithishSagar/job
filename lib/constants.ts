@@ -32,6 +32,14 @@ export type BoardStatusValue = (typeof BOARD_STATUSES)[number];
 export type UserRole = 'owner' | 'viewer';
 
 /**
+ * Written by the separate, manual AI-evaluation process (not this app) into
+ * the `evaluations` table — see docs/API_DOCS.md. This app only ever reads
+ * these values, never writes them.
+ */
+export const RECOMMENDATIONS = ['APPLY', 'MAYBE', 'SKIP'] as const;
+export type Recommendation = (typeof RECOMMENDATIONS)[number];
+
+/**
  * Every job board the scraper targets. The dashboard renders a row for each of
  * these even when the board has no row in `job_board_status` yet (it then
  * shows as "Unknown / Not yet scraped"); any board the scraper reports that is
@@ -76,6 +84,7 @@ export type JobBoardName = (typeof JOB_BOARDS)[number];
 
 /** Sidebar navigation (also used to resolve the page title in the header). */
 export const NAV_ITEMS = [
+  { href: '/dashboard/ranked', label: 'Ranked', icon: 'star' },
   { href: '/dashboard/jobs', label: 'Jobs', icon: 'briefcase' },
   { href: '/dashboard/applications', label: 'Applications', icon: 'send' },
   { href: '/dashboard/analytics', label: 'Analytics', icon: 'chart' },

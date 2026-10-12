@@ -184,6 +184,14 @@ export function RefreshIcon(props: IconProps) {
   );
 }
 
+export function StarIcon(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M12 3.5 14.6 9l6 .87-4.3 4.2 1 6-5.3-2.8-5.3 2.8 1-6-4.3-4.2 6-.87L12 3.5Z" />
+    </Base>
+  );
+}
+
 const ICONS = {
   briefcase: BriefcaseIcon,
   send: SendIcon,
@@ -191,6 +199,7 @@ const ICONS = {
   pulse: PulseIcon,
   stack: StackIcon,
   cog: CogIcon,
+  star: StarIcon,
 } as const;
 
 export type IconName = keyof typeof ICONS;

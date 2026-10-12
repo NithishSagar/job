@@ -37,6 +37,28 @@ One row per board per user, the aggregate numbers behind
 `/dashboard/board-statistics`. Updated by the scraper after each run by
 recomputing counts from `jobs`.
 
+## `evaluations` + `top_100_jobs` (external — not defined in this repo)
+
+The `/dashboard/ranked` page reads a `top_100_jobs` VIEW, expected to join
+`jobs` with an `evaluations` table and return (at least): `id` (the
+underlying job's id), `job_title`, `company_name`, `location`, `job_url`,
+`match_score` (0-100), `recommendation` (`APPLY`/`MAYBE`/`SKIP`),
+`fit_summary`, `ranked_position`, `key_strengths_match` (text array).
+
+Neither object is created by `supabase/schema.sql` or written to by anything
+in this repo — a separate, manual AI-scoring process (a human running job
+descriptions through Claude in a chat session and writing the results back to
+Supabase) owns both. If `/dashboard/ranked` shows a "could not load
+top_100_jobs" error, that process's table/view hasn't been created yet in
+this Supabase project — this app only ever reads it.
+
+One thing to check on whoever's side created the view: a plain Postgres VIEW
+runs with its creator's privileges by default, not the querying user's, which
+would make it ignore the `jobs`/`applications`-style RLS policies in this
+repo entirely (harmless for a single-user setup, worth knowing if a second
+viewer is ever invited). Postgres 15+ supports `CREATE VIEW ... WITH
+(security_invoker = true)` to make it respect RLS like a normal query instead.
+
 ## `invites`
 
 Short-lived (7-day) invite codes an owner generates from

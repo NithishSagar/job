@@ -58,6 +58,48 @@ export function RemoteBadge({ value }: { value: string | null | undefined }) {
   return <span className={cn('badge', className)}>{value}</span>;
 }
 
+/** Colour mapping for `evaluations.match_score` (0-100, written elsewhere). */
+export function matchScoreAppearance(score: number | null | undefined) {
+  if (score === null || score === undefined) {
+    return { className: 'text-slate-400 dark:text-slate-500' };
+  }
+  if (score >= 90) return { className: 'text-emerald-600 dark:text-emerald-400' };
+  if (score >= 75) return { className: 'text-amber-600 dark:text-amber-400' };
+  if (score >= 70) return { className: 'text-orange-600 dark:text-orange-400' };
+  return { className: 'text-rose-600 dark:text-rose-400' };
+}
+
+export function MatchScoreBadge({ score }: { score: number | null | undefined }) {
+  const { className } = matchScoreAppearance(score);
+  return (
+    <div className="text-right">
+      <div className={cn('text-2xl font-bold tabular-nums leading-tight', className)}>
+        {score ?? '—'}
+      </div>
+      {score !== null && score !== undefined ? (
+        <div className="text-[0.65rem] text-slate-400 dark:text-slate-500">/100</div>
+      ) : null}
+    </div>
+  );
+}
+
+const RECOMMENDATION_APPEARANCE: Record<string, { symbol: string; className: string }> = {
+  APPLY: { symbol: '✓', className: 'badge-green' },
+  MAYBE: { symbol: '~', className: 'badge-yellow' },
+  SKIP: { symbol: '✗', className: 'badge-red' },
+};
+
+export function RecommendationBadge({ value }: { value: string | null | undefined }) {
+  if (!value) return <span className="badge badge-grey">Not yet scored</span>;
+  const appearance = RECOMMENDATION_APPEARANCE[value] ?? { symbol: '•', className: 'badge-grey' };
+  return (
+    <span className={cn('badge', appearance.className)}>
+      <span aria-hidden="true">{appearance.symbol}</span>
+      {value}
+    </span>
+  );
+}
+
 export type TrendDirection = 'up' | 'flat' | 'down' | 'unknown';
 
 /**
